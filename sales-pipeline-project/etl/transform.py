@@ -20,6 +20,12 @@ from pyspark.sql import types as T
 REQUIRED_TXN_COLUMNS = ["transaction_id", "customer_id", "product_id"]
 MAX_AMOUNT_MULTIPLIER = 3.0  # outlier ceiling = 3x the 99th percentile amount
 
+# Shape guards for the two accepted transaction_date layouts. Anything that
+# doesn't match is never handed to to_date(), so malformed input becomes NULL
+# instead of an exception regardless of the ANSI setting.
+ISO_DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
+US_DATE_PATTERN = r"^\d{1,2}/\d{1,2}/\d{4}$"
+
 
 # --------------------------------------------------------------------------- #
 # 1. Standardize column names and types
@@ -49,10 +55,13 @@ def standardize_transaction_types(df: DataFrame) -> DataFrame:
     ).drop("_amount_clean")
 
     # transaction_date arrives as either ISO (yyyy-MM-dd) or US (MM/dd/yyyy).
-    # try_to_date returns NULL instead of raising on unparseable input (e.g. "not-a-date"),
-    # which matters under ANSI mode (the Glue 4.0 default) as well as locally.
-    iso = F.expr("try_to_date(transaction_date, 'yyyy-MM-dd')")
-    us = F.expr("try_to_date(transaction_date, 'MM/dd/yyyy')")
+    # Each parse is guarded by a shape check so unparseable input (e.g. "not-a-date")
+    # yields NULL instead of raising -- try_to_date would express this directly but is
+    # Spark 4.0+ only, and Glue 4.0 / local pyspark 3.5 don't have it.
+    iso = F.when(F.col("transaction_date").rlike(ISO_DATE_PATTERN),
+                 F.to_date(F.col("transaction_date"), "yyyy-MM-dd"))
+    us = F.when(F.col("transaction_date").rlike(US_DATE_PATTERN),
+                F.to_date(F.col("transaction_date"), "MM/dd/yyyy"))
     df = df.withColumn("transaction_date", F.coalesce(iso, us))
 
     df = df.withColumn("ingestion_timestamp", F.to_timestamp("ingestion_timestamp"))
