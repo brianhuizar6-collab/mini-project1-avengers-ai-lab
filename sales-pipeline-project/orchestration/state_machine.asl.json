@@ -1,0 +1,72 @@
+{
+  "Comment": "Customer Sales Analytics Pipeline — Stage 1 (clean+curate) then Stage 2 (catalog+publish)",
+  "StartAt": "CleanAndCurate",
+  "States": {
+    "CleanAndCurate": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "clean-and-curate",
+        "Arguments": {
+          "--RAW_TRANSACTIONS_PATH": "s3://REPLACE_BUCKET/raw/transactions/",
+          "--RAW_CUSTOMERS_PATH": "s3://REPLACE_BUCKET/raw/customers/",
+          "--RAW_PRODUCTS_PATH": "s3://REPLACE_BUCKET/raw/products/",
+          "--CURATED_PATH": "s3://REPLACE_BUCKET/curated/transactions/",
+          "--REJECTED_PATH": "s3://REPLACE_BUCKET/rejected/transactions/",
+          "--METRICS_PATH": "s3://REPLACE_BUCKET/control/run_metrics/",
+          "--RUN_ID.$": "$$.Execution.Name"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "PipelineFailed"
+        }
+      ],
+      "Next": "CatalogAndPublish"
+    },
+    "CatalogAndPublish": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "catalog-and-publish",
+        "Arguments": {
+          "--CURATED_DATABASE": "curated",
+          "--CURATED_TABLE": "transactions",
+          "--ATHENA_OUTPUT": "s3://REPLACE_BUCKET/athena-results/",
+          "--ATHENA_WORKGROUP": "primary"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 15,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "PipelineFailed"
+        }
+      ],
+      "End": true
+    },
+    "PipelineFailed": {
+      "Type": "Fail",
+      "Error": "PipelineStageFailed",
+      "Cause": "One of the two pipeline stages failed after retries — check the Glue job run logs in CloudWatch."
+    }
+  }
+}

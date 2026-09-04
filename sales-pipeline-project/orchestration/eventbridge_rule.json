@@ -1,0 +1,14 @@
+{
+  "_comment": "Reference only — this is what the rule looks like once built. Create it in the console instead: EventBridge > Rules > Create rule, cron(0 3 * * ? *), target = the sales-pipeline state machine, let the console auto-create the invoke role. See docs/console-walkthrough.md §10.",
+  "Name": "sales-pipeline-nightly",
+  "ScheduleExpression": "cron(0 3 * * ? *)",
+  "State": "ENABLED",
+  "Targets": [
+    {
+      "Id": "sales-pipeline-state-machine",
+      "Arn": "arn:aws:states:REPLACE_REGION:REPLACE_ACCOUNT_ID:stateMachine:sales-pipeline",
+      "RoleArn": "arn:aws:iam::REPLACE_ACCOUNT_ID:role/sales-pipeline-eventbridge-role",
+      "Input": "{}"
+    }
+  ]
+}
